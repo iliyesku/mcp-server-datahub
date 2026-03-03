@@ -6,6 +6,7 @@ from datahub.ingestion.graph.links import make_url_for_urn
 from datahub_integrations.mcp import mcp_server
 from datahub_integrations.mcp.mcp_server import (
     _clean_schema_fields,
+    _get_description_limit,
     _sort_fields_by_priority,
     clean_get_entities_response,
     clean_gql_response,
@@ -529,7 +530,7 @@ def test_truncate_descriptions() -> None:
         }
     }
 
-    truncate_descriptions(result, 50)
+    truncate_descriptions(result, 100)
 
     assert result == {
         "downstreams": {
@@ -555,6 +556,163 @@ def test_truncate_descriptions() -> None:
             ]
         }
     }
+
+
+class TestGetDescriptionLimit:
+    """Tests for _get_description_limit helper."""
+
+    def test_glossary_term_urn_returns_override(self) -> None:
+        limit = _get_description_limit("urn:li:glossaryTerm:SomeTerm")
+        assert limit == 5000
+
+    def test_glossary_node_urn_returns_override(self) -> None:
+        limit = _get_description_limit("urn:li:glossaryNode:SomeNode")
+        assert limit == 5000
+
+    def test_dataset_urn_returns_fallback(self) -> None:
+        limit = _get_description_limit(
+            "urn:li:dataset:(urn:li:dataPlatform:snowflake,db.schema.table,PROD)"
+        )
+        assert limit == mcp_server.DESCRIPTION_LENGTH_LIMIT
+
+    def test_none_urn_returns_fallback(self) -> None:
+        assert _get_description_limit(None) == mcp_server.DESCRIPTION_LENGTH_LIMIT
+
+    def test_empty_string_returns_fallback(self) -> None:
+        assert _get_description_limit("") == mcp_server.DESCRIPTION_LENGTH_LIMIT
+
+    def test_malformed_urn_returns_fallback(self) -> None:
+        assert (
+            _get_description_limit("not-a-urn")
+            == mcp_server.DESCRIPTION_LENGTH_LIMIT
+        )
+
+    def test_custom_fallback_used_when_no_override(self) -> None:
+        assert _get_description_limit(None, fallback=42) == 42
+        assert (
+            _get_description_limit(
+                "urn:li:dataset:(urn:li:dataPlatform:hive,db.table,PROD)", fallback=42
+            )
+            == 42
+        )
+
+    def test_override_takes_precedence_over_fallback(self) -> None:
+        limit = _get_description_limit("urn:li:glossaryTerm:Foo", fallback=42)
+        assert limit == 5000
+
+
+class TestTruncateDescriptionsEntityAware:
+    """Tests for URN-aware truncate_descriptions behavior."""
+
+    def test_glossary_term_gets_higher_limit(self) -> None:
+        long_desc = "x" * 3000
+        result = {
+            "urn": "urn:li:glossaryTerm:MyTerm",
+            "description": long_desc,
+        }
+        truncate_descriptions(result)
+        assert len(result["description"]) == 3000
+
+    def test_dataset_still_truncated_at_default(self) -> None:
+        long_desc = "x" * 2000
+        result = {
+            "urn": "urn:li:dataset:(urn:li:dataPlatform:snowflake,db.schema.table,PROD)",
+            "description": long_desc,
+        }
+        truncate_descriptions(result)
+        assert len(result["description"]) == mcp_server.DESCRIPTION_LENGTH_LIMIT
+
+    def test_nested_glossary_term_in_lineage(self) -> None:
+        long_desc = "x" * 3000
+        lineage = {
+            "downstreams": {
+                "searchResults": [
+                    {
+                        "entity": {
+                            "urn": "urn:li:glossaryTerm:AccessErrorHandling",
+                            "description": long_desc,
+                        }
+                    }
+                ]
+            }
+        }
+        truncate_descriptions(lineage)
+        entity = lineage["downstreams"]["searchResults"][0]["entity"]
+        assert len(entity["description"]) == 3000
+
+    def test_mixed_entities_different_limits(self) -> None:
+        entities = [
+            {
+                "urn": "urn:li:glossaryTerm:Foo",
+                "description": "g" * 3000,
+            },
+            {
+                "urn": "urn:li:dataset:(urn:li:dataPlatform:hive,db.t,PROD)",
+                "description": "d" * 2000,
+            },
+        ]
+        truncate_descriptions(entities)
+        assert len(entities[0]["description"]) == 3000
+        assert (
+            len(entities[1]["description"]) == mcp_server.DESCRIPTION_LENGTH_LIMIT
+        )
+
+    def test_no_urn_uses_global_default(self) -> None:
+        result = {"description": "x" * 2000}
+        truncate_descriptions(result)
+        assert len(result["description"]) == mcp_server.DESCRIPTION_LENGTH_LIMIT
+
+    def test_explicit_max_length_still_works(self) -> None:
+        result = {"description": "x" * 100}
+        truncate_descriptions(result, max_length=50)
+        assert len(result["description"]) == 50
+
+    def test_glossary_term_at_5000_boundary(self) -> None:
+        result = {
+            "urn": "urn:li:glossaryTerm:Big",
+            "description": "x" * 5500,
+        }
+        truncate_descriptions(result)
+        assert len(result["description"]) == 5000
+        assert result["description"].endswith("...")
+
+
+class TestDescriptionLimitEnvOverrides:
+    """Tests for environment variable configuration of description limits."""
+
+    def test_hard_limit_env_override(self) -> None:
+        with patch.dict("os.environ", {"DESCRIPTION_LENGTH_LIMIT": "2000"}):
+            import importlib
+
+            importlib.reload(mcp_server)
+            assert mcp_server.DESCRIPTION_LENGTH_LIMIT == 2000
+            importlib.reload(mcp_server)
+
+    def test_overrides_env_valid_json(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"DESCRIPTION_LENGTH_OVERRIDES": '{"dataset": 3000}'},
+        ):
+            import importlib
+
+            importlib.reload(mcp_server)
+            assert mcp_server.DESCRIPTION_LENGTH_OVERRIDES["dataset"] == 3000
+            assert mcp_server.DESCRIPTION_LENGTH_OVERRIDES["glossaryTerm"] == 5000
+            importlib.reload(mcp_server)
+
+    def test_overrides_env_invalid_json_uses_defaults(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"DESCRIPTION_LENGTH_OVERRIDES": "not-json"},
+        ):
+            import importlib
+
+            importlib.reload(mcp_server)
+            assert mcp_server.DESCRIPTION_LENGTH_OVERRIDES == {
+                "glossaryTerm": 5000,
+                "glossaryNode": 5000,
+            }
+            importlib.reload(mcp_server)
 
 
 def test_get_lineage_normalizes_null_string() -> None:
