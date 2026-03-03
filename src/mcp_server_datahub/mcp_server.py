@@ -278,7 +278,7 @@ def truncate_descriptions(
             if key == "description" and isinstance(value, str):
                 data[key] = sanitize_and_truncate_description(value, effective_limit)
             elif isinstance(value, (dict, list)):
-                truncate_descriptions(value, max_length)
+                truncate_descriptions(value, effective_limit)
     elif isinstance(data, list):
         for item in data:
             truncate_descriptions(item, max_length)
