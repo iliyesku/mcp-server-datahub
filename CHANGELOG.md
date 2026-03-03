@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Entity-type-aware description truncation**: The hardcoded `DESCRIPTION_LENGTH_HARD_LIMIT = 1000` now defaults to 5000 chars for glossary terms and glossary nodes, whose descriptions carry primary content that was being silently cut. The global limit is configurable via the `DESCRIPTION_LENGTH_HARD_LIMIT` env var, and per-entity-type overrides via `DESCRIPTION_LENGTH_OVERRIDES` (JSON).
+- **Entity-type-aware description truncation**: The hardcoded 1000-char description limit now defaults to 5000 chars for glossary terms and glossary nodes, whose descriptions carry primary content that was being silently cut. The global limit is configurable via the `DESCRIPTION_LENGTH_LIMIT` env var, and per-entity-type overrides via `DESCRIPTION_LENGTH_OVERRIDES` (JSON).
 
 ---
 

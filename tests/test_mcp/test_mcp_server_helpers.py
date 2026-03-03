@@ -573,18 +573,18 @@ class TestGetDescriptionLimit:
         limit = _get_description_limit(
             "urn:li:dataset:(urn:li:dataPlatform:snowflake,db.schema.table,PROD)"
         )
-        assert limit == mcp_server.DESCRIPTION_LENGTH_HARD_LIMIT
+        assert limit == mcp_server.DESCRIPTION_LENGTH_LIMIT
 
     def test_none_urn_returns_fallback(self) -> None:
-        assert _get_description_limit(None) == mcp_server.DESCRIPTION_LENGTH_HARD_LIMIT
+        assert _get_description_limit(None) == mcp_server.DESCRIPTION_LENGTH_LIMIT
 
     def test_empty_string_returns_fallback(self) -> None:
-        assert _get_description_limit("") == mcp_server.DESCRIPTION_LENGTH_HARD_LIMIT
+        assert _get_description_limit("") == mcp_server.DESCRIPTION_LENGTH_LIMIT
 
     def test_malformed_urn_returns_fallback(self) -> None:
         assert (
             _get_description_limit("not-a-urn")
-            == mcp_server.DESCRIPTION_LENGTH_HARD_LIMIT
+            == mcp_server.DESCRIPTION_LENGTH_LIMIT
         )
 
     def test_custom_fallback_used_when_no_override(self) -> None:
@@ -620,7 +620,7 @@ class TestTruncateDescriptionsEntityAware:
             "description": long_desc,
         }
         truncate_descriptions(result)
-        assert len(result["description"]) == mcp_server.DESCRIPTION_LENGTH_HARD_LIMIT
+        assert len(result["description"]) == mcp_server.DESCRIPTION_LENGTH_LIMIT
 
     def test_nested_glossary_term_in_lineage(self) -> None:
         long_desc = "x" * 3000
@@ -654,13 +654,13 @@ class TestTruncateDescriptionsEntityAware:
         truncate_descriptions(entities)
         assert len(entities[0]["description"]) == 3000
         assert (
-            len(entities[1]["description"]) == mcp_server.DESCRIPTION_LENGTH_HARD_LIMIT
+            len(entities[1]["description"]) == mcp_server.DESCRIPTION_LENGTH_LIMIT
         )
 
     def test_no_urn_uses_global_default(self) -> None:
         result = {"description": "x" * 2000}
         truncate_descriptions(result)
-        assert len(result["description"]) == mcp_server.DESCRIPTION_LENGTH_HARD_LIMIT
+        assert len(result["description"]) == mcp_server.DESCRIPTION_LENGTH_LIMIT
 
     def test_explicit_max_length_still_works(self) -> None:
         result = {"description": "x" * 100}
@@ -681,11 +681,11 @@ class TestDescriptionLimitEnvOverrides:
     """Tests for environment variable configuration of description limits."""
 
     def test_hard_limit_env_override(self) -> None:
-        with patch.dict("os.environ", {"DESCRIPTION_LENGTH_HARD_LIMIT": "2000"}):
+        with patch.dict("os.environ", {"DESCRIPTION_LENGTH_LIMIT": "2000"}):
             import importlib
 
             importlib.reload(mcp_server)
-            assert mcp_server.DESCRIPTION_LENGTH_HARD_LIMIT == 2000
+            assert mcp_server.DESCRIPTION_LENGTH_LIMIT == 2000
             importlib.reload(mcp_server)
 
     def test_overrides_env_valid_json(self) -> None:
