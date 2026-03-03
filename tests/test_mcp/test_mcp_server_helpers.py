@@ -629,7 +629,7 @@ class TestTruncateDescriptionsEntityAware:
                 "searchResults": [
                     {
                         "entity": {
-                            "urn": "urn:li:glossaryTerm:AccessErrorHandling",
+                            "urn": "urn:li:glossaryTerm:SomeTerm",
                             "description": long_desc,
                         }
                     }
