@@ -685,6 +685,26 @@ class TestTruncateDescriptionsEntityAware:
         assert len(result["description"]) == 5000
         assert result["description"].endswith("...")
 
+    def test_override_propagates_to_nested_properties(self) -> None:
+        """Description inside a child dict (e.g. properties) inherits the parent's resolved limit."""
+        default = mcp_server.DESCRIPTION_LENGTH_LIMIT
+        override_limit = default * 5
+        desc_length = default * 3
+        long_desc = "x" * desc_length
+        result = {
+            "urn": "urn:li:glossaryTerm:SomeTerm",
+            "properties": {
+                "name": "SomeTerm",
+                "description": long_desc,
+            },
+        }
+        with patch.dict(
+            mcp_server.DESCRIPTION_LENGTH_OVERRIDES,
+            {"glossaryTerm": override_limit},
+        ):
+            truncate_descriptions(result)
+        assert len(result["properties"]["description"]) == desc_length
+
     def test_no_overrides_all_use_global_default(self) -> None:
         """Without any overrides, all entity types use the global limit."""
         entities = [
