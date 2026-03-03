@@ -76,23 +76,16 @@ DESCRIPTION_LENGTH_LIMIT = int(os.getenv("DESCRIPTION_LENGTH_LIMIT", 1000))
 QUERY_LENGTH_HARD_LIMIT = 5000
 DOCUMENT_CONTENT_CHAR_LIMIT = 8000
 
-_DESCRIPTION_LENGTH_DEFAULTS: dict[str, int] = {
-    "glossaryTerm": 5000,
-    "glossaryNode": 5000,
-}
-
 _overrides_raw = os.getenv("DESCRIPTION_LENGTH_OVERRIDES", "")
 try:
-    _user_overrides = json.loads(_overrides_raw) if _overrides_raw else {}
-    DESCRIPTION_LENGTH_OVERRIDES: dict[str, int] = {
-        **_DESCRIPTION_LENGTH_DEFAULTS,
-        **{k: int(v) for k, v in _user_overrides.items()},
-    }
-except (json.JSONDecodeError, ValueError):
-    logger.warning(
-        f"Invalid DESCRIPTION_LENGTH_OVERRIDES={_overrides_raw!r}, using defaults"
+    DESCRIPTION_LENGTH_OVERRIDES: dict[str, int] = (
+        {k: int(v) for k, v in json.loads(_overrides_raw).items()}
+        if _overrides_raw
+        else {}
     )
-    DESCRIPTION_LENGTH_OVERRIDES = dict(_DESCRIPTION_LENGTH_DEFAULTS)
+except (json.JSONDecodeError, ValueError):
+    logger.warning(f"Invalid DESCRIPTION_LENGTH_OVERRIDES={_overrides_raw!r}, ignoring")
+    DESCRIPTION_LENGTH_OVERRIDES = {}
 
 
 def _get_description_limit(
