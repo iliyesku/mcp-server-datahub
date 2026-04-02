@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 import pytest
 from datahub.ingestion.graph.links import make_url_for_urn
 
-from datahub_integrations.mcp import mcp_server
+from datahub_integrations.mcp import graphql_helpers
 from datahub_integrations.mcp.mcp_server import (
     _clean_schema_fields,
     _get_description_limit,
@@ -24,7 +24,7 @@ def test_inject_urls_for_urns() -> None:
     )
 
     with patch(
-        "datahub_integrations.mcp.mcp_server._is_datahub_cloud", return_value=True
+        "datahub_integrations.mcp.graphql_helpers._is_datahub_cloud", return_value=True
     ):
         response = {
             "searchResults": [
@@ -484,7 +484,7 @@ def test_clean_get_entities_response_with_schema_metadata() -> None:
 
 def test_truncate_query_long() -> None:
     """Test that long queries are truncated correctly."""
-    with patch.object(mcp_server, "QUERY_LENGTH_HARD_LIMIT", 50):
+    with patch.object(graphql_helpers, "QUERY_LENGTH_HARD_LIMIT", 50):
         long_query = "SELECT * FROM very_long_table_name_that_goes_on_and_on " * 100
         result = truncate_query(long_query)
 
@@ -563,7 +563,7 @@ class TestGetDescriptionLimit:
 
     def test_urn_with_override_returns_override(self) -> None:
         with patch.dict(
-            mcp_server.DESCRIPTION_LENGTH_OVERRIDES, {"glossaryTerm": 5000}
+            graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES, {"glossaryTerm": 5000}
         ):
             limit = _get_description_limit("urn:li:glossaryTerm:SomeTerm")
             assert limit == 5000
@@ -572,17 +572,18 @@ class TestGetDescriptionLimit:
         limit = _get_description_limit(
             "urn:li:dataset:(urn:li:dataPlatform:snowflake,db.schema.table,PROD)"
         )
-        assert limit == mcp_server.DESCRIPTION_LENGTH_LIMIT
+        assert limit == graphql_helpers.DESCRIPTION_LENGTH_LIMIT
 
     def test_none_urn_returns_fallback(self) -> None:
-        assert _get_description_limit(None) == mcp_server.DESCRIPTION_LENGTH_LIMIT
+        assert _get_description_limit(None) == graphql_helpers.DESCRIPTION_LENGTH_LIMIT
 
     def test_empty_string_returns_fallback(self) -> None:
-        assert _get_description_limit("") == mcp_server.DESCRIPTION_LENGTH_LIMIT
+        assert _get_description_limit("") == graphql_helpers.DESCRIPTION_LENGTH_LIMIT
 
     def test_malformed_urn_returns_fallback(self) -> None:
         assert (
-            _get_description_limit("not-a-urn") == mcp_server.DESCRIPTION_LENGTH_LIMIT
+            _get_description_limit("not-a-urn")
+            == graphql_helpers.DESCRIPTION_LENGTH_LIMIT
         )
 
     def test_custom_fallback_used_when_no_override(self) -> None:
@@ -596,7 +597,7 @@ class TestGetDescriptionLimit:
 
     def test_override_takes_precedence_over_fallback(self) -> None:
         with patch.dict(
-            mcp_server.DESCRIPTION_LENGTH_OVERRIDES, {"glossaryTerm": 5000}
+            graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES, {"glossaryTerm": 5000}
         ):
             limit = _get_description_limit("urn:li:glossaryTerm:Foo", fallback=42)
             assert limit == 5000
@@ -612,7 +613,7 @@ class TestTruncateDescriptionsEntityAware:
             "description": long_desc,
         }
         with patch.dict(
-            mcp_server.DESCRIPTION_LENGTH_OVERRIDES, {"glossaryTerm": 5000}
+            graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES, {"glossaryTerm": 5000}
         ):
             truncate_descriptions(result)
         assert len(result["description"]) == 3000
@@ -624,7 +625,7 @@ class TestTruncateDescriptionsEntityAware:
             "description": long_desc,
         }
         truncate_descriptions(result)
-        assert len(result["description"]) == mcp_server.DESCRIPTION_LENGTH_LIMIT
+        assert len(result["description"]) == graphql_helpers.DESCRIPTION_LENGTH_LIMIT
 
     def test_nested_override_entity_in_lineage(self) -> None:
         long_desc = "x" * 3000
@@ -641,7 +642,7 @@ class TestTruncateDescriptionsEntityAware:
             }
         }
         with patch.dict(
-            mcp_server.DESCRIPTION_LENGTH_OVERRIDES, {"glossaryTerm": 5000}
+            graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES, {"glossaryTerm": 5000}
         ):
             truncate_descriptions(lineage)
         entity = lineage["downstreams"]["searchResults"][0]["entity"]
@@ -659,16 +660,18 @@ class TestTruncateDescriptionsEntityAware:
             },
         ]
         with patch.dict(
-            mcp_server.DESCRIPTION_LENGTH_OVERRIDES, {"glossaryTerm": 5000}
+            graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES, {"glossaryTerm": 5000}
         ):
             truncate_descriptions(entities)
         assert len(entities[0]["description"]) == 3000
-        assert len(entities[1]["description"]) == mcp_server.DESCRIPTION_LENGTH_LIMIT
+        assert (
+            len(entities[1]["description"]) == graphql_helpers.DESCRIPTION_LENGTH_LIMIT
+        )
 
     def test_no_urn_uses_global_default(self) -> None:
         result = {"description": "x" * 2000}
         truncate_descriptions(result)
-        assert len(result["description"]) == mcp_server.DESCRIPTION_LENGTH_LIMIT
+        assert len(result["description"]) == graphql_helpers.DESCRIPTION_LENGTH_LIMIT
 
     def test_explicit_max_length_still_works(self) -> None:
         result = {"description": "x" * 100}
@@ -680,14 +683,14 @@ class TestTruncateDescriptionsEntityAware:
             "urn": "urn:li:domain:SomeDomain",
             "description": "x" * 5500,
         }
-        with patch.dict(mcp_server.DESCRIPTION_LENGTH_OVERRIDES, {"domain": 5000}):
+        with patch.dict(graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES, {"domain": 5000}):
             truncate_descriptions(result)
         assert len(result["description"]) == 5000
         assert result["description"].endswith("...")
 
     def test_override_propagates_to_nested_properties(self) -> None:
         """Description inside a child dict (e.g. properties) inherits the parent's resolved limit."""
-        default = mcp_server.DESCRIPTION_LENGTH_LIMIT
+        default = graphql_helpers.DESCRIPTION_LENGTH_LIMIT
         override_limit = default * 5
         desc_length = default * 3
         long_desc = "x" * desc_length
@@ -699,7 +702,7 @@ class TestTruncateDescriptionsEntityAware:
             },
         }
         with patch.dict(
-            mcp_server.DESCRIPTION_LENGTH_OVERRIDES,
+            graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES,
             {"glossaryTerm": override_limit},
         ):
             truncate_descriptions(result)
@@ -717,7 +720,9 @@ class TestTruncateDescriptionsEntityAware:
         ]
         truncate_descriptions(entities)
         for entity in entities:
-            assert len(entity["description"]) == mcp_server.DESCRIPTION_LENGTH_LIMIT
+            assert (
+                len(entity["description"]) == graphql_helpers.DESCRIPTION_LENGTH_LIMIT
+            )
 
 
 class TestDescriptionLimitEnvOverrides:
@@ -727,9 +732,9 @@ class TestDescriptionLimitEnvOverrides:
         with patch.dict("os.environ", {"DESCRIPTION_LENGTH_LIMIT": "2000"}):
             import importlib
 
-            importlib.reload(mcp_server)
-            assert mcp_server.DESCRIPTION_LENGTH_LIMIT == 2000
-            importlib.reload(mcp_server)
+            importlib.reload(graphql_helpers)
+            assert graphql_helpers.DESCRIPTION_LENGTH_LIMIT == 2000
+            importlib.reload(graphql_helpers)
 
     def test_overrides_env_valid_json(self) -> None:
         with patch.dict(
@@ -738,11 +743,11 @@ class TestDescriptionLimitEnvOverrides:
         ):
             import importlib
 
-            importlib.reload(mcp_server)
-            assert mcp_server.DESCRIPTION_LENGTH_OVERRIDES["glossaryTerm"] == 5000
-            assert mcp_server.DESCRIPTION_LENGTH_OVERRIDES["domain"] == 3000
-            assert "dataset" not in mcp_server.DESCRIPTION_LENGTH_OVERRIDES
-            importlib.reload(mcp_server)
+            importlib.reload(graphql_helpers)
+            assert graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES["glossaryTerm"] == 5000
+            assert graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES["domain"] == 3000
+            assert "dataset" not in graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES
+            importlib.reload(graphql_helpers)
 
     def test_overrides_env_invalid_json_gives_empty(self) -> None:
         with patch.dict(
@@ -751,16 +756,16 @@ class TestDescriptionLimitEnvOverrides:
         ):
             import importlib
 
-            importlib.reload(mcp_server)
-            assert mcp_server.DESCRIPTION_LENGTH_OVERRIDES == {}
-            importlib.reload(mcp_server)
+            importlib.reload(graphql_helpers)
+            assert graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES == {}
+            importlib.reload(graphql_helpers)
 
     def test_no_env_vars_gives_empty_overrides(self) -> None:
         import importlib
 
-        importlib.reload(mcp_server)
-        assert mcp_server.DESCRIPTION_LENGTH_OVERRIDES == {}
-        assert mcp_server.DESCRIPTION_LENGTH_LIMIT == 1000
+        importlib.reload(graphql_helpers)
+        assert graphql_helpers.DESCRIPTION_LENGTH_OVERRIDES == {}
+        assert graphql_helpers.DESCRIPTION_LENGTH_LIMIT == 1000
 
 
 def test_get_lineage_normalizes_null_string() -> None:
@@ -771,7 +776,7 @@ def test_get_lineage_normalizes_null_string() -> None:
 
     # Mock the DataHub client and related components
     with patch(
-        "datahub_integrations.mcp.mcp_server.get_datahub_client"
+        "datahub_integrations.mcp.graphql_helpers.get_datahub_client"
     ) as mock_get_client:
         mock_client = Mock()
         mock_graph = Mock()
@@ -787,7 +792,7 @@ def test_get_lineage_normalizes_null_string() -> None:
         mock_lineage_api.get_lineage.return_value = mock_lineage
 
         with patch(
-            "datahub_integrations.mcp.mcp_server.AssetLineageAPI",
+            "datahub_integrations.mcp.tools.lineage.AssetLineageAPI",
             return_value=mock_lineage_api,
         ):
             # Test with string "null" - should be normalized to None
@@ -837,7 +842,7 @@ def test_get_lineage_cleans_entities_in_results() -> None:
     }
 
     with patch(
-        "datahub_integrations.mcp.mcp_server.get_datahub_client"
+        "datahub_integrations.mcp.graphql_helpers.get_datahub_client"
     ) as mock_get_client:
         mock_client = Mock()
         mock_graph = Mock()
@@ -848,11 +853,11 @@ def test_get_lineage_cleans_entities_in_results() -> None:
         mock_lineage_api.get_lineage.return_value = mock_lineage_response
 
         with patch(
-            "datahub_integrations.mcp.mcp_server.AssetLineageAPI",
+            "datahub_integrations.mcp.tools.lineage.AssetLineageAPI",
             return_value=mock_lineage_api,
         ):
             with patch(
-                "datahub_integrations.mcp.mcp_server.clean_get_entities_response"
+                "datahub_integrations.mcp.graphql_helpers.clean_get_entities_response"
             ) as mock_clean:
                 mock_clean.side_effect = lambda x: {**x, "cleaned": True}
 
@@ -1251,8 +1256,8 @@ class TestCleanSchemaFields:
 class TestCleanGetEntitiesResponseFieldTruncation:
     """Tests for field truncation in clean_get_entities_response."""
 
-    @patch("datahub_integrations.mcp.mcp_server.TokenCountEstimator")
-    @patch("datahub_integrations.mcp.mcp_server.ENTITY_SCHEMA_TOKEN_BUDGET", 1000)
+    @patch("datahub_integrations.mcp.graphql_helpers.TokenCountEstimator")
+    @patch("datahub_integrations.mcp.graphql_helpers.ENTITY_SCHEMA_TOKEN_BUDGET", 1000)
     def test_truncates_fields_when_exceeds_budget(self, mock_estimator) -> None:
         """Test that fields are truncated when they exceed token budget."""
         # Each field is 300 tokens, budget is 1000, so should fit 3 fields
@@ -1274,8 +1279,8 @@ class TestCleanGetEntitiesResponseFieldTruncation:
         assert result["schemaMetadata"]["schemaFieldsTruncated"]["totalFields"] == 10
         assert result["schemaMetadata"]["schemaFieldsTruncated"]["includedFields"] == 3
 
-    @patch("datahub_integrations.mcp.mcp_server.TokenCountEstimator")
-    @patch("datahub_integrations.mcp.mcp_server.ENTITY_SCHEMA_TOKEN_BUDGET", 10000)
+    @patch("datahub_integrations.mcp.graphql_helpers.TokenCountEstimator")
+    @patch("datahub_integrations.mcp.graphql_helpers.ENTITY_SCHEMA_TOKEN_BUDGET", 10000)
     def test_no_truncation_when_within_budget(self, mock_estimator) -> None:
         """Test that no truncation occurs when fields fit within budget."""
         mock_estimator.estimate_dict_tokens.return_value = 100
@@ -1295,8 +1300,8 @@ class TestCleanGetEntitiesResponseFieldTruncation:
         assert len(result["schemaMetadata"]["fields"]) == 5
         assert "schemaFieldsTruncated" not in result["schemaMetadata"]
 
-    @patch("datahub_integrations.mcp.mcp_server.TokenCountEstimator")
-    @patch("datahub_integrations.mcp.mcp_server.ENTITY_SCHEMA_TOKEN_BUDGET", 500)
+    @patch("datahub_integrations.mcp.graphql_helpers.TokenCountEstimator")
+    @patch("datahub_integrations.mcp.graphql_helpers.ENTITY_SCHEMA_TOKEN_BUDGET", 500)
     def test_always_includes_at_least_one_field(self, mock_estimator) -> None:
         """Test that at least 1 field is included even if it exceeds budget."""
         # First field exceeds budget (1000 > 500)
@@ -1361,8 +1366,8 @@ class TestCleanGetEntitiesResponseFieldTruncation:
         # Same fields in same order
         assert fields1 == fields2
 
-    @patch("datahub_integrations.mcp.mcp_server.TokenCountEstimator")
-    @patch("datahub_integrations.mcp.mcp_server.ENTITY_SCHEMA_TOKEN_BUDGET", 1000)
+    @patch("datahub_integrations.mcp.graphql_helpers.TokenCountEstimator")
+    @patch("datahub_integrations.mcp.graphql_helpers.ENTITY_SCHEMA_TOKEN_BUDGET", 1000)
     def test_truncation_metadata_accuracy(self, mock_estimator) -> None:
         """Test that truncation metadata accurately reflects field counts."""
         # Each field is 300 tokens, budget is 1000, so 3 fields fit
